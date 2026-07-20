@@ -426,6 +426,8 @@ function generateFunTeamName(chosenPlayers, families) {
 function MolkkyTracker() {
   const [teams, setTeams] = useState([]);
   const [nextId, setNextId] = useState(1);
+  const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
+  const [roundNumber, setRoundNumber] = useState(1);
   const [newName, setNewName] = useState("");
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState("");
@@ -664,8 +666,37 @@ function MolkkyTracker() {
   // --- Gestion des équipes en jeu ---
   function pushHistory() {
     setHistory((h) =>
-      [...h, { teams: JSON.parse(JSON.stringify(teams)), gameOver }].slice(-50)
+      [
+        ...h,
+        {
+          teams: JSON.parse(JSON.stringify(teams)),
+          gameOver,
+          currentTeamIndex,
+          roundNumber,
+        },
+      ].slice(-50)
     );
+  }
+
+  // Finds the index of the next team that should play, in creation order,
+  // skipping eliminated teams and the finished (50-point) winner.
+  function findNextTeamIndex(teamList, fromIdx) {
+    const n = teamList.length;
+    if (n === 0) return 0;
+    for (let step = 1; step <= n; step++) {
+      const idx = (fromIdx + step) % n;
+      if (!teamList[idx].eliminated && teamList[idx].score !== 50) return idx;
+    }
+    return fromIdx;
+  }
+
+  // Self-corrects if the stored index happens to point at a team that's no
+  // longer playable (eliminated, or already finished at 50 points).
+  function getActiveTeamIndex(teamList, idx) {
+    if (teamList.length === 0) return 0;
+    const t = teamList[idx];
+    if (t && !t.eliminated && t.score !== 50) return idx;
+    return findNextTeamIndex(teamList, idx);
   }
 
   function addTeam() {
@@ -677,6 +708,7 @@ function MolkkyTracker() {
         id: nextId,
         name,
         playerIds: [],
+        currentPlayerIndex: 0,
         score: 0,
         misses: 0,
         eliminated: false,
@@ -705,6 +737,7 @@ function MolkkyTracker() {
         id: nextId,
         name: label,
         playerIds: [...pickerSelected],
+        currentPlayerIndex: 0,
         score: 0,
         misses: 0,
         eliminated: false,
@@ -718,11 +751,19 @@ function MolkkyTracker() {
   }
 
   function removeTeam(id) {
-    setTeams((t) => t.filter((team) => team.id !== id));
+    const removedIdx = teams.findIndex((team) => team.id === id);
+    const updatedTeams = teams.filter((team) => team.id !== id);
+    setTeams(updatedTeams);
     setSelections((s) => {
       const copy = { ...s };
       delete copy[id];
       return copy;
+    });
+    setCurrentTeamIndex((ci) => {
+      if (updatedTeams.length === 0) return 0;
+      let next = ci;
+      if (removedIdx !== -1 && removedIdx < ci) next = ci - 1;
+      return Math.min(next, updatedTeams.length - 1);
     });
   }
 
@@ -774,8 +815,11 @@ function MolkkyTracker() {
 
   function applyScore(id, pts, pinsCount) {
     if (gameOver) return;
-    const team = teams.find((t) => t.id === id);
+    const teamIdx = teams.findIndex((t) => t.id === id);
+    const team = teams[teamIdx];
     if (!team || team.eliminated) return;
+    const activeIdx = getActiveTeamIndex(teams, currentTeamIndex);
+    if (teamIdx !== activeIdx) return; // pas le tour de cette équipe
 
     pushHistory();
 
@@ -835,11 +879,17 @@ function MolkkyTracker() {
       }
       const scoreHistory = [...t.stats.scoreHistory, { score, ts: Date.now() }];
 
+      const playerCount = (t.playerIds || []).length;
+      const currentPlayerIndex = playerCount > 1
+        ? ((t.currentPlayerIndex || 0) + 1) % playerCount
+        : t.currentPlayerIndex || 0;
+
       return {
         ...t,
         score,
         misses,
         eliminated,
+        currentPlayerIndex,
         stats: {
           ...t.stats,
           throws: throwsCount,
@@ -860,6 +910,14 @@ function MolkkyTracker() {
     setTeams(updated);
     setStatus(newStatus);
     setGameOver(newGameOver);
+
+    if (!newGameOver) {
+      const nextIdx = findNextTeamIndex(updated, teamIdx);
+      if (nextIdx <= teamIdx) {
+        setRoundNumber((r) => r + 1);
+      }
+      setCurrentTeamIndex(nextIdx);
+    }
 
     if (newGameOver && !gameOver) {
       const summary = computeGameSummary(updated);
@@ -890,6 +948,8 @@ function MolkkyTracker() {
     const prev = history[history.length - 1];
     setTeams(prev.teams);
     setGameOver(prev.gameOver);
+    setCurrentTeamIndex(prev.currentTeamIndex || 0);
+    setRoundNumber(prev.roundNumber || 1);
     setStatus("");
     setHistory((h) => h.slice(0, -1));
   }
@@ -901,6 +961,7 @@ function MolkkyTracker() {
         score: 0,
         misses: 0,
         eliminated: false,
+        currentPlayerIndex: 0,
         stats: { ...EMPTY_STATS, scoreHistory: [] },
       }))
     );
@@ -910,6 +971,8 @@ function MolkkyTracker() {
     setStatus("");
     setShowResults(false);
     setResultsSummary(null);
+    setCurrentTeamIndex(0);
+    setRoundNumber(1);
   }
 
   function clearAll() {
@@ -920,6 +983,8 @@ function MolkkyTracker() {
     setStatus("");
     setShowResults(false);
     setResultsSummary(null);
+    setCurrentTeamIndex(0);
+    setRoundNumber(1);
   }
 
   const allTime = computeAllTimeStats(gameHistoryRecords);
@@ -975,6 +1040,20 @@ function MolkkyTracker() {
   const activeFamily = families.find((f) => f.id === activeFamilyId);
   const activeFamilyPlayers = players.filter((p) => p.familyId === activeFamilyId);
 
+  function playerLabel(pid) {
+    const p = players.find((pl) => pl.id === pid);
+    if (!p) return "?";
+    const fam = families.find((f) => f.id === p.familyId);
+    return `${p.firstName}${fam ? " " + fam.name : ""}`;
+  }
+
+  const safeCurrentTeamIndex = getActiveTeamIndex(teams, currentTeamIndex);
+  const activeTeam = teams[safeCurrentTeamIndex] || null;
+  const activeTeamCurrentPlayer =
+    activeTeam && (activeTeam.playerIds || []).length > 0
+      ? playerLabel(activeTeam.playerIds[activeTeam.currentPlayerIndex || 0])
+      : null;
+
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-gradient-to-b from-emerald-800 to-emerald-950 text-white px-3 py-4 sm:p-4 flex flex-col items-center">
       <div className="w-full max-w-lg flex items-center justify-between flex-wrap gap-y-2 mb-1">
@@ -1003,9 +1082,21 @@ function MolkkyTracker() {
           </button>
         </div>
       </div>
-      <p className="text-xs text-white/60 mb-5 text-center max-w-md">
+      <p className="text-xs text-white/60 mb-2 text-center max-w-md">
         Clique sur les quilles tombées lors du lancer, puis valide.
       </p>
+
+      {teams.length > 0 && !gameOver && activeTeam && (
+        <div className="mb-4 bg-yellow-400/15 border border-yellow-400/40 rounded-xl px-4 py-2 text-center max-w-lg w-full">
+          <div className="text-[11px] uppercase tracking-wide text-yellow-200/80">
+            Tour {roundNumber} · Au tour de
+          </div>
+          <div className="font-bold text-yellow-300">
+            {activeTeam.name}
+            {activeTeamCurrentPlayer ? ` — ${activeTeamCurrentPlayer}` : ""}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2 w-full max-w-lg mb-6">
         <div className="flex gap-2">
@@ -1040,11 +1131,12 @@ function MolkkyTracker() {
       )}
 
       <div className="flex flex-wrap gap-5 justify-center max-w-5xl w-full">
-        {teams.map((team) => {
+        {teams.map((team, teamIndex) => {
           const selected = selections[team.id] || [];
           const pendingTotal =
             selected.length === 1 ? selected[0] : selected.length;
-          const disabled = gameOver || team.eliminated;
+          const isTeamTurn = teamIndex === safeCurrentTeamIndex;
+          const disabled = gameOver || team.eliminated || !isTeamTurn;
 
           return (
             <div
@@ -1052,8 +1144,12 @@ function MolkkyTracker() {
               className={`relative rounded-2xl p-4 w-full max-w-[19rem] sm:w-72 sm:max-w-none text-center border-2 ${
                 team.score === 50
                   ? "bg-yellow-400/20 border-yellow-400"
+                  : isTeamTurn && !gameOver && !team.eliminated
+                  ? "bg-black/20 border-emerald-300 ring-2 ring-emerald-300/60"
                   : "bg-black/20 border-white/10"
-              } ${team.eliminated ? "opacity-40" : ""}`}
+              } ${team.eliminated ? "opacity-40" : ""} ${
+                !isTeamTurn && !gameOver && !team.eliminated ? "opacity-60" : ""
+              }`}
             >
               <button
                 onClick={() => removeTeam(team.id)}
@@ -1066,6 +1162,28 @@ function MolkkyTracker() {
               <div className="font-bold text-lg mb-1 break-words">
                 {team.name}
               </div>
+
+              {(team.playerIds || []).length > 0 && (
+                <div className="flex flex-wrap gap-1 justify-center mb-2">
+                  {team.playerIds.map((pid, i) => (
+                    <span
+                      key={pid}
+                      className={`text-[11px] px-2 py-0.5 rounded-full ${
+                        i === (team.currentPlayerIndex || 0)
+                          ? "bg-yellow-400 text-emerald-950 font-bold"
+                          : "bg-white/10 text-white/70"
+                      }`}
+                    >
+                      {playerLabel(pid)}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {!isTeamTurn && !gameOver && !team.eliminated && (
+                <div className="text-[11px] text-white/50 mb-1">En attente...</div>
+              )}
+
               <div className="text-5xl font-bold mb-1">{team.score}</div>
 
               <div className="flex items-center justify-center gap-1.5 mb-2 text-xs text-white/70">
