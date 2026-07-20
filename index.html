@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
-  html, body { margin:0; padding:0; background:#022c22; }
+  html, body { margin:0; padding:0; background:#022c22; overflow-x:hidden; }
 </style>
 </head>
 <body>
@@ -939,8 +939,8 @@ function MolkkyTracker() {
   const activeFamilyPlayers = players.filter((p) => p.familyId === activeFamilyId);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-800 to-emerald-950 text-white p-4 flex flex-col items-center">
-      <div className="w-full max-w-lg flex items-center justify-between mb-1">
+    <div className="min-h-screen w-full overflow-x-hidden bg-gradient-to-b from-emerald-800 to-emerald-950 text-white px-3 py-4 sm:p-4 flex flex-col items-center">
+      <div className="w-full max-w-lg flex items-center justify-between flex-wrap gap-y-2 mb-1">
         <h1 className="text-2xl font-bold tracking-wide">Mölkky</h1>
         <div className="flex gap-2">
           <button
@@ -1012,7 +1012,7 @@ function MolkkyTracker() {
           return (
             <div
               key={team.id}
-              className={`relative rounded-2xl p-4 w-72 text-center border-2 ${
+              className={`relative rounded-2xl p-4 w-full max-w-[19rem] sm:w-72 sm:max-w-none text-center border-2 ${
                 team.score === 50
                   ? "bg-yellow-400/20 border-yellow-400"
                   : "bg-black/20 border-white/10"
