@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
-<title>Mölkky Score</title>
+<title>Les Mölkkylimpiques</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -89,6 +89,7 @@ const EMPTY_STATS = {
   soloPoints: 0,
   multiPoints: 0,
   scoreHistory: [],
+  perPlayerThrows: {}, // { [playerId]: {throws, hits, missesTotal, bestThrow, busts} } — filled in as each player takes their turn, works for both solo and multi-player teams
 };
 
 const EMPTY_PLAYER_STATS = {
@@ -100,6 +101,15 @@ const EMPTY_PLAYER_STATS = {
   soloBestThrow: 0,
   soloMisses: 0,
   soloBusts: 0,
+  // Individual stats that count every throw this player personally made,
+  // whether they were playing solo or as part of a multi-player team.
+  indivThrows: 0,
+  indivHits: 0,
+  indivMisses: 0,
+  indivBestThrow: 0,
+  indivBusts: 0,
+  indivAccSum: 0,
+  indivAccCount: 0,
 };
 
 const DEFAULT_SETTINGS = {
@@ -787,6 +797,7 @@ function MolkkyTracker() {
       updatedTeams.forEach((team) => {
         const isWinner = team.score === 50;
         const isSolo = (team.playerIds || []).length === 1;
+        const perPlayerThrows = team.stats.perPlayerThrows || {};
         (team.playerIds || []).forEach((pid) => {
           const cur = next[pid] || { ...EMPTY_PLAYER_STATS };
           const entry = {
@@ -804,6 +815,19 @@ function MolkkyTracker() {
             entry.soloBestThrow = Math.max(cur.soloBestThrow, team.stats.bestThrow);
             entry.soloMisses = cur.soloMisses + team.stats.missesTotal;
             entry.soloBusts = cur.soloBusts + team.stats.bustCount;
+          }
+          // Individual stats: every throw this player personally made this
+          // game, whether solo or as part of a multi-player team.
+          const pThrows = perPlayerThrows[pid];
+          if (pThrows && pThrows.throws > 0) {
+            const indivAcc = Math.round((pThrows.hits / pThrows.throws) * 100);
+            entry.indivThrows = cur.indivThrows + pThrows.throws;
+            entry.indivHits = cur.indivHits + pThrows.hits;
+            entry.indivMisses = cur.indivMisses + pThrows.missesTotal;
+            entry.indivBestThrow = Math.max(cur.indivBestThrow, pThrows.bestThrow);
+            entry.indivBusts = cur.indivBusts + pThrows.busts;
+            entry.indivAccSum = cur.indivAccSum + indivAcc;
+            entry.indivAccCount = cur.indivAccCount + 1;
           }
           next[pid] = entry;
         });
@@ -880,6 +904,26 @@ function MolkkyTracker() {
       const scoreHistory = [...t.stats.scoreHistory, { score, ts: Date.now() }];
 
       const playerCount = (t.playerIds || []).length;
+      const throwingPlayerId =
+        playerCount > 0 ? t.playerIds[t.currentPlayerIndex || 0] : null;
+      const perPlayerThrows = { ...t.stats.perPlayerThrows };
+      if (throwingPlayerId != null) {
+        const prevP = perPlayerThrows[throwingPlayerId] || {
+          throws: 0,
+          hits: 0,
+          missesTotal: 0,
+          bestThrow: 0,
+          busts: 0,
+        };
+        perPlayerThrows[throwingPlayerId] = {
+          throws: prevP.throws + 1,
+          hits: isMiss ? prevP.hits : prevP.hits + 1,
+          missesTotal: isMiss ? prevP.missesTotal + 1 : prevP.missesTotal,
+          bestThrow: !isMiss ? Math.max(prevP.bestThrow, pts) : prevP.bestThrow,
+          busts: prevP.busts + (newScoreRaw > 50 ? 1 : 0),
+        };
+      }
+
       const currentPlayerIndex = playerCount > 1
         ? ((t.currentPlayerIndex || 0) + 1) % playerCount
         : t.currentPlayerIndex || 0;
@@ -903,6 +947,7 @@ function MolkkyTracker() {
           soloPoints,
           multiPoints,
           scoreHistory,
+          perPlayerThrows,
         },
       };
     });
@@ -997,8 +1042,8 @@ function MolkkyTracker() {
         members: 0,
         gamesPlayed: 0,
         wins: 0,
-        soloAccSum: 0,
-        soloAccCount: 0,
+        indivAccSum: 0,
+        indivAccCount: 0,
       };
     });
     players.forEach((p) => {
@@ -1008,8 +1053,8 @@ function MolkkyTracker() {
       if (st) {
         byFamily[p.familyId].gamesPlayed += st.gamesPlayed;
         byFamily[p.familyId].wins += st.wins;
-        byFamily[p.familyId].soloAccSum += st.soloAccSum;
-        byFamily[p.familyId].soloAccCount += st.soloAccCount;
+        byFamily[p.familyId].indivAccSum += st.indivAccSum;
+        byFamily[p.familyId].indivAccCount += st.indivAccCount;
       }
     });
     return byFamily;
@@ -1056,9 +1101,16 @@ function MolkkyTracker() {
 
   return (
     <div className="min-h-screen w-full overflow-x-hidden bg-gradient-to-b from-emerald-800 to-emerald-950 text-white px-3 py-4 sm:p-4 flex flex-col items-center">
-      <div className="w-full max-w-lg flex items-center justify-between flex-wrap gap-y-2 mb-1">
-        <h1 className="text-2xl font-bold tracking-wide">Mölkky</h1>
-        <div className="flex gap-2">
+      <div className="w-full max-w-lg flex items-start justify-between gap-2 mb-3">
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-wide leading-none">
+            Les Mölkkylimpiques
+          </h1>
+          <p className="text-[11px] text-emerald-300/80 font-semibold tracking-wide uppercase mt-1">
+            🎳 Suivi de scores Mölkky
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
           <button
             onClick={() => setShowProfiles(true)}
             className="bg-white/15 hover:bg-white/25 rounded-lg p-2"
@@ -1082,9 +1134,6 @@ function MolkkyTracker() {
           </button>
         </div>
       </div>
-      <p className="text-xs text-white/60 mb-2 text-center max-w-md">
-        Clique sur les quilles tombées lors du lancer, puis valide.
-      </p>
 
       {teams.length > 0 && !gameOver && activeTeam && (
         <div className="mb-4 bg-yellow-400/15 border border-yellow-400/40 rounded-xl px-4 py-2 text-center max-w-lg w-full">
@@ -1905,8 +1954,8 @@ function MolkkyTracker() {
                         .map((p) => {
                           const st = playerStats[p.id];
                           const fam = families.find((f) => f.id === p.familyId);
-                          const soloAcc = st.soloAccCount
-                            ? Math.round(st.soloAccSum / st.soloAccCount)
+                          const indivAcc = st.indivAccCount
+                            ? Math.round(st.indivAccSum / st.indivAccCount)
                             : null;
                           return (
                             <div key={p.id} className="flex justify-between text-white/80 py-0.5">
@@ -1915,8 +1964,11 @@ function MolkkyTracker() {
                               </span>
                               <span className="font-bold text-right">
                                 {st.wins}/{st.gamesPlayed} victoires
-                                {soloAcc !== null && (
-                                  <span className="font-normal text-white/60"> · {soloAcc}% précision solo</span>
+                                {indivAcc !== null && (
+                                  <span className="font-normal text-white/60">
+                                    {" "}
+                                    · {indivAcc}% précision · meilleur lancer {st.indivBestThrow} pts
+                                  </span>
                                 )}
                               </span>
                             </div>
@@ -1941,10 +1993,10 @@ function MolkkyTracker() {
                             <span>Famille {f.name}</span>
                             <span className="font-bold text-right">
                               {f.wins}/{f.gamesPlayed} victoires
-                              {f.soloAccCount > 0 && (
+                              {f.indivAccCount > 0 && (
                                 <span className="font-normal text-white/60">
                                   {" "}
-                                  · {Math.round(f.soloAccSum / f.soloAccCount)}% précision
+                                  · {Math.round(f.indivAccSum / f.indivAccCount)}% précision
                                 </span>
                               )}
                             </span>
