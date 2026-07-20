@@ -15,13 +15,6 @@
 <body>
 <div id="root"></div>
 
-<!-- The JSX source sits here as inert text (type="text/plain" is never auto-run by
-     the browser or by Babel's page scanner). A small loader script below reads it,
-     compiles it with the CLASSIC React.createElement transform (not the modern
-     "automatic" runtime, which emits `import` statements that fail outside real
-     ES modules), then executes the result. This avoids the two bugs that broke
-     the previous version: stray `import` statements, and encoding issues from
-     loading a separate .jsx file. -->
 <script type="text/plain" id="app-source">
 const { useState, useEffect } = React;
 
@@ -431,11 +424,8 @@ function generateFunTeamName(chosenPlayers, families) {
 }
 
 function MolkkyTracker() {
-  const [teams, setTeams] = useState([
-    { id: 1, name: "Anne", playerIds: [], score: 0, misses: 0, eliminated: false, stats: { ...EMPTY_STATS, scoreHistory: [] } },
-    { id: 2, name: "Hugo", playerIds: [], score: 0, misses: 0, eliminated: false, stats: { ...EMPTY_STATS, scoreHistory: [] } },
-  ]);
-  const [nextId, setNextId] = useState(3);
+  const [teams, setTeams] = useState([]);
+  const [nextId, setNextId] = useState(1);
   const [newName, setNewName] = useState("");
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState("");
