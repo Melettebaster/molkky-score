@@ -451,6 +451,7 @@ function MolkkyTracker() {
     age: "",
     role: "Autre",
   });
+  const [editingPlayerId, setEditingPlayerId] = useState(null);
 
   // Sélecteur de joueurs pour créer une équipe depuis les profils
   const [showPlayerPicker, setShowPlayerPicker] = useState(false);
@@ -548,6 +549,26 @@ function MolkkyTracker() {
     if (!activeFamilyId) return;
     const firstName = newPlayerDraft.firstName.trim();
     if (!firstName) return;
+
+    if (editingPlayerId !== null) {
+      const updated = players.map((p) =>
+        p.id === editingPlayerId
+          ? {
+              ...p,
+              firstName,
+              sex: newPlayerDraft.sex,
+              age: newPlayerDraft.age,
+              role: newPlayerDraft.role,
+            }
+          : p
+      );
+      setPlayers(updated);
+      saveToStorage("molkky_players", JSON.stringify(updated));
+      setEditingPlayerId(null);
+      setNewPlayerDraft({ firstName: "", sex: "H", age: "", role: "Autre" });
+      return;
+    }
+
     const player = {
       id: nextPlayerId,
       familyId: activeFamilyId,
@@ -563,10 +584,26 @@ function MolkkyTracker() {
     setNewPlayerDraft({ firstName: "", sex: "H", age: "", role: "Autre" });
   }
 
+  function startEditPlayer(p) {
+    setEditingPlayerId(p.id);
+    setNewPlayerDraft({
+      firstName: p.firstName,
+      sex: p.sex,
+      age: p.age,
+      role: p.role,
+    });
+  }
+
+  function cancelEditPlayer() {
+    setEditingPlayerId(null);
+    setNewPlayerDraft({ firstName: "", sex: "H", age: "", role: "Autre" });
+  }
+
   function removePlayer(id) {
     const updated = players.filter((p) => p.id !== id);
     setPlayers(updated);
     saveToStorage("molkky_players", JSON.stringify(updated));
+    if (editingPlayerId === id) cancelEditPlayer();
   }
 
   async function saveNow() {
@@ -1204,7 +1241,7 @@ function MolkkyTracker() {
             ) : (
               <>
                 <button
-                  onClick={() => setActiveFamilyId(null)}
+                  onClick={() => { setActiveFamilyId(null); cancelEditPlayer(); }}
                   className="flex items-center gap-1 text-sm text-white/70 mb-3"
                 >
                   <ChevronLeft size={16} /> Toutes les familles
@@ -1215,7 +1252,9 @@ function MolkkyTracker() {
                   {activeFamilyPlayers.map((p) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm"
+                      className={`flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 text-sm ${
+                        editingPlayerId === p.id ? "ring-2 ring-emerald-400" : ""
+                      }`}
                     >
                       <div>
                         <div className="font-semibold">
@@ -1225,12 +1264,20 @@ function MolkkyTracker() {
                           {p.role} · {p.age ? `${p.age} ans` : "âge non précisé"}
                         </div>
                       </div>
-                      <button
-                        onClick={() => removePlayer(p.id)}
-                        className="text-white/50 hover:text-red-400"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => startEditPlayer(p)}
+                          className="text-white/50 hover:text-emerald-300 text-xs font-semibold uppercase tracking-wide"
+                        >
+                          Modifier
+                        </button>
+                        <button
+                          onClick={() => removePlayer(p.id)}
+                          className="text-white/50 hover:text-red-400"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {activeFamilyPlayers.length === 0 && (
@@ -1240,7 +1287,7 @@ function MolkkyTracker() {
 
                 <div className="bg-white/5 rounded-lg p-3">
                   <div className="text-xs uppercase tracking-wide text-white/50 mb-2">
-                    Ajouter un joueur
+                    {editingPlayerId !== null ? "Modifier le joueur" : "Ajouter un joueur"}
                   </div>
                   <input
                     type="text"
@@ -1285,12 +1332,26 @@ function MolkkyTracker() {
                       </option>
                     ))}
                   </select>
-                  <button
-                    onClick={addPlayer}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 rounded-lg py-2 font-bold text-sm flex items-center justify-center gap-1.5"
-                  >
-                    <UserPlus size={16} /> Ajouter à la famille
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={addPlayer}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-lg py-2 font-bold text-sm flex items-center justify-center gap-1.5"
+                    >
+                      {editingPlayerId !== null ? (
+                        <><Check size={16} /> Enregistrer</>
+                      ) : (
+                        <><UserPlus size={16} /> Ajouter à la famille</>
+                      )}
+                    </button>
+                    {editingPlayerId !== null && (
+                      <button
+                        onClick={cancelEditPlayer}
+                        className="bg-white/15 hover:bg-white/25 rounded-lg px-3 py-2 text-sm"
+                      >
+                        Annuler
+                      </button>
+                    )}
+                  </div>
                 </div>
               </>
             )}
